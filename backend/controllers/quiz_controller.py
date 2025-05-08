@@ -95,26 +95,69 @@ def generate_quiz():
 @quiz_bp.route('/', methods=['GET'])
 @jwt_required()
 def get_all_quizzes():
-    """Get all quizzes for current user"""
+    """Get all quizzes for current user with pagination and filtering"""
     user_id = get_jwt_identity()
     
-    quizzes = list(db.quizzes.find({"user_id": user_id}))
+    # Pagination parameters
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 10))
+    skip = (page - 1) * limit
+    
+    # Filtering parameters
+    search_query = request.args.get('search', '')
+    material_id = request.args.get('material', '')
+    
+    # Create filter
+    query_filter = {"user_id": user_id}
+    
+    # Add search filter if provided
+    if search_query:
+        query_filter["$or"] = [
+            {"title": {"$regex": search_query, "$options": "i"}},
+            {"description": {"$regex": search_query, "$options": "i"}}
+        ]
+    
+    # Add material filter if provided
+    if material_id and ObjectId.is_valid(material_id):
+        query_filter["material_id"] = material_id
+    
+    # Count total for pagination
+    total_quizzes = db.quizzes.count_documents(query_filter)
+    
+    # Get quizzes with pagination
+    quizzes = list(db.quizzes.find(query_filter).sort("created_at", -1).skip(skip).limit(limit))
     
     # Convert ObjectId to string and format response
     formatted_quizzes = []
     for quiz in quizzes:
-        quiz['_id'] = str(quiz['_id'])
-        quiz['material_id'] = str(quiz['material_id'])
+        # Get related material info
+        material = None
+        if ObjectId.is_valid(quiz['material_id']):
+            material = db.study_materials.find_one({"_id": ObjectId(quiz['material_id'])})
+        
+        # Get attempt count
+        attempt_count = db.quiz_attempts.count_documents({"quiz_id": str(quiz['_id']), "user_id": user_id})
+        
         formatted_quizzes.append({
-            "id": quiz['_id'],
+            "id": str(quiz['_id']),
             "title": quiz['title'],
             "description": quiz['description'],
             "num_questions": len(quiz['questions']),
             "created_at": quiz['created_at'].isoformat(),
-            "material_id": quiz['material_id']
+            "material_id": str(quiz['material_id']),
+            "material_title": material['title'] if material else "Unknown",
+            "attempt_count": attempt_count
         })
     
-    return jsonify(formatted_quizzes), 200
+    return jsonify({
+        "quizzes": formatted_quizzes,
+        "pagination": {
+            "total": total_quizzes,
+            "page": page,
+            "limit": limit,
+            "pages": (total_quizzes + limit - 1) // limit
+        }
+    }), 200
 
 @quiz_bp.route('/<quiz_id>', methods=['GET'])
 @jwt_required()
@@ -153,11 +196,23 @@ def get_quiz(quiz_id):
             
         return jsonify({"error": "Quiz not found"}), 404
     
+    # Get material info
+    material = None
+    if ObjectId.is_valid(quiz['material_id']):
+        material = db.study_materials.find_one({"_id": ObjectId(quiz['material_id'])})
+    
+    # Get attempt count
+    attempt_count = db.quiz_attempts.count_documents({"quiz_id": str(quiz['_id']), "user_id": user_id})
+    
     # Convert ObjectId to string and format dates
     quiz['_id'] = str(quiz['_id'])
     quiz['material_id'] = str(quiz['material_id'])
     quiz['created_at'] = quiz['created_at'].isoformat()
     quiz['updated_at'] = quiz['updated_at'].isoformat()
+    
+    # Add extra info
+    quiz['material_title'] = material['title'] if material else "Unknown"
+    quiz['attempt_count'] = attempt_count
     
     print(f"Quiz found and returned successfully")
     return jsonify(quiz), 200
@@ -178,6 +233,9 @@ def delete_quiz(quiz_id):
     
     if result.deleted_count == 0:
         return jsonify({"error": "Quiz not found or not owned by user"}), 404
+    
+    # Also delete any quiz attempts
+    db.quiz_attempts.delete_many({"quiz_id": quiz_id, "user_id": user_id})
     
     return jsonify({"message": "Quiz deleted successfully"}), 200
 
@@ -281,6 +339,7 @@ def submit_quiz_attempt(quiz_id):
         attempt = {
             "quiz_id": quiz_id,  # Store as string
             "user_id": user_id,
+            "quiz_title": quiz['title'],
             "answers": answers,
             "score": score,
             "total_questions": total_questions,
@@ -320,22 +379,82 @@ def quiz_attempts_options():
 @quiz_bp.route('/attempts', methods=['GET'])
 @jwt_required()
 def get_user_attempts():
-    """Get all quiz attempts for the current user"""
+    """Get all quiz attempts for the current user with pagination and filtering"""
     user_id = get_jwt_identity()
     
-    # Get all attempts for the user
-    attempts = list(db.quiz_attempts.find({"user_id": user_id}))
+    # Pagination parameters
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 10))
+    skip = (page - 1) * limit
+    
+    # Filtering parameters
+    search_query = request.args.get('search', '')
+    quiz_id = request.args.get('quiz', '')
+    
+    # Date range filtering
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Create filter
+    query_filter = {"user_id": user_id}
+    
+    # Add search filter if provided (search by quiz title)
+    if search_query:
+        query_filter["quiz_title"] = {"$regex": search_query, "$options": "i"}
+    
+    # Add quiz filter if provided
+    if quiz_id:
+        query_filter["quiz_id"] = quiz_id
+    
+    # Add date range filter if provided
+    date_filter = {}
+    if start_date:
+        try:
+            start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            date_filter["$gte"] = start_datetime
+        except ValueError:
+            pass
+    
+    if end_date:
+        try:
+            end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            date_filter["$lte"] = end_datetime
+        except ValueError:
+            pass
+    
+    if date_filter:
+        query_filter["created_at"] = date_filter
+    
+    # Count total for pagination
+    total_attempts = db.quiz_attempts.count_documents(query_filter)
+    
+    # Get attempts with pagination
+    attempts = list(db.quiz_attempts.find(query_filter).sort("created_at", -1).skip(skip).limit(limit))
     
     # Convert ObjectId to string for JSON serialization
     for attempt in attempts:
         attempt['_id'] = str(attempt['_id'])
-        attempt['quiz_id'] = str(attempt['quiz_id'])
+        
+        # Format dates
+        if 'created_at' in attempt:
+            attempt['created_at'] = attempt['created_at'].isoformat()
         
         # Simplify response by removing detailed results
         if 'results' in attempt:
             del attempt['results']
+        
+        if 'answers' in attempt:
+            del attempt['answers']
     
-    return jsonify(attempts), 200
+    return jsonify({
+        "attempts": attempts,
+        "pagination": {
+            "total": total_attempts,
+            "page": page,
+            "limit": limit,
+            "pages": (total_attempts + limit - 1) // limit
+        }
+    }), 200
 
 @quiz_bp.route('/dashboard', methods=['GET'])
 @jwt_required()
@@ -347,40 +466,32 @@ def get_quiz_dashboard():
     print(f"User ID: {user_id}")
     
     try:
-        # Get all attempts for the user
-        attempts = list(db.quiz_attempts.find({"user_id": user_id}).sort("created_at", -1))
+        # Get all attempts for the user (limit to last 5 for dashboard)
+        attempts = list(db.quiz_attempts.find({"user_id": user_id}).sort("created_at", -1).limit(5))
         
-        # Get all quizzes for the user
-        quizzes = list(db.quizzes.find({"user_id": user_id}))
+        # Get total counts for stats
+        total_attempts = db.quiz_attempts.count_documents({"user_id": user_id})
+        total_quizzes = db.quizzes.count_documents({"user_id": user_id})
         
-        # Create a map of quiz_id to quiz data for easy lookup
-        quiz_map = {str(quiz['_id']): quiz for quiz in quizzes}
+        # Get actual material count
+        total_materials = db.study_materials.count_documents({"user_id": user_id})
         
-        # Format the data for the dashboard
-        dashboard_data = []
+        # Calculate average score
+        if total_attempts > 0:
+            avg_pipeline = [
+                {"$match": {"user_id": user_id}},
+                {"$group": {"_id": None, "avgScore": {"$avg": "$percentage"}}}
+            ]
+            avg_result = list(db.quiz_attempts.aggregate(avg_pipeline))
+            avg_score = round(avg_result[0]['avgScore'], 2) if avg_result else 0
+        else:
+            avg_score = 0
+        
+        # Format attempts for display
+        formatted_attempts = []
         for attempt in attempts:
             # Convert ObjectId to string
             attempt['_id'] = str(attempt['_id'])
-            quiz_id = attempt['quiz_id']
-            
-            # Get quiz information
-            quiz = None
-            if ObjectId.is_valid(quiz_id):
-                quiz_object_id = ObjectId(quiz_id)
-                if str(quiz_object_id) in quiz_map:
-                    quiz = quiz_map[str(quiz_object_id)]
-            else:
-                # If quiz_id is already a string, look it up directly
-                if quiz_id in quiz_map:
-                    quiz = quiz_map[quiz_id]
-            
-            # Add quiz details to the attempt data
-            if quiz:
-                attempt['quiz_title'] = quiz.get('title', 'Unknown Quiz')
-                attempt['quiz_description'] = quiz.get('description', '')
-            else:
-                attempt['quiz_title'] = 'Quiz Not Found'
-                attempt['quiz_description'] = ''
             
             # Format date
             if 'created_at' in attempt:
@@ -393,17 +504,42 @@ def get_quiz_dashboard():
             if 'answers' in attempt:
                 del attempt['answers']
             
-            dashboard_data.append(attempt)
+            formatted_attempts.append(attempt)
         
-        # Get quiz performance stats
-        total_attempts = len(dashboard_data)
-        avg_score = sum([a.get('percentage', 0) for a in dashboard_data]) / total_attempts if total_attempts > 0 else 0
+        # Get recent quizzes (limit to last 3)
+        recent_quizzes = list(db.quizzes.find({"user_id": user_id}).sort("created_at", -1).limit(3))
+        formatted_quizzes = []
+        
+        for quiz in recent_quizzes:
+            formatted_quizzes.append({
+                "id": str(quiz['_id']),
+                "title": quiz['title'],
+                "description": quiz.get('description', ''),
+                "num_questions": len(quiz.get('questions', [])),
+                "created_at": quiz['created_at'].isoformat()
+            })
+        
+        # Get recent materials (limit to last 3)
+        recent_materials = list(db.study_materials.find({"user_id": user_id}).sort("created_at", -1).limit(3))
+        formatted_materials = []
+        
+        for material in recent_materials:
+            formatted_materials.append({
+                "id": str(material['_id']),
+                "title": material['title'],
+                "description": material.get('description', ''),
+                "created_at": material['created_at'].isoformat()
+            })
         
         response = {
-            "attempts": dashboard_data,
+            "attempts": formatted_attempts,
+            "recentQuizzes": formatted_quizzes,
+            "recentMaterials": formatted_materials,
             "stats": {
                 "total_attempts": total_attempts,
-                "average_score": round(avg_score, 2)
+                "total_quizzes": total_quizzes,
+                "total_materials": total_materials,
+                "average_score": avg_score
             }
         }
         
@@ -416,80 +552,40 @@ def get_quiz_dashboard():
 @quiz_bp.route('/attempts/<quiz_id>', methods=['GET'])
 @jwt_required()
 def get_quiz_attempts(quiz_id):
-    """Get all attempts for a specific quiz"""
+    """Get all attempts for a specific quiz with pagination"""
     user_id = get_jwt_identity()
     
-    print(f"\n--- GET QUIZ ATTEMPTS ---")
-    print(f"Quiz ID: {quiz_id}")
-    print(f"User ID: {user_id}")
+    # Pagination parameters
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 10))
+    skip = (page - 1) * limit
     
-    try:
-        # Get all attempts for the quiz
-        attempts = list(db.quiz_attempts.find({
-            "quiz_id": quiz_id,
-            "user_id": user_id
-        }).sort("created_at", -1))  # Most recent first
-        
-        # Convert ObjectId to string for JSON serialization
-        for attempt in attempts:
-            attempt['_id'] = str(attempt['_id'])
-            attempt['quiz_id'] = str(attempt['quiz_id'])
-            
-            # Format date
-            if 'created_at' in attempt:
-                attempt['created_at'] = attempt['created_at'].isoformat()
-        
-        return jsonify(attempts), 200
+    # Create filter
+    query_filter = {
+        "quiz_id": quiz_id,
+        "user_id": user_id
+    }
     
-    except Exception as e:
-        print(f"Error in get_quiz_attempts: {str(e)}")
-        return jsonify({"error": f"Failed to retrieve quiz attempts: {str(e)}"}), 500
-
-@quiz_bp.route('/diagnostics', methods=['GET'])
-@jwt_required()
-def quiz_diagnostics():
-    """Diagnostic endpoint to check quiz data structure"""
-    user_id = get_jwt_identity()
+    # Count total for pagination
+    total_attempts = db.quiz_attempts.count_documents(query_filter)
     
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+    # Get attempts with pagination
+    attempts = list(db.quiz_attempts.find(query_filter).sort("created_at", -1).skip(skip).limit(limit))
     
-    try:
-        # Check quizzes
-        quizzes = list(db.quizzes.find({"user_id": user_id}).limit(5))
-        formatted_quizzes = []
+    # Convert ObjectId to string for JSON serialization
+    for attempt in attempts:
+        attempt['_id'] = str(attempt['_id'])
         
-        for quiz in quizzes:
-            formatted_quizzes.append({
-                "id": str(quiz['_id']),
-                "id_type": type(quiz['_id']).__name__,
-                "user_id": quiz['user_id'],
-                "user_id_type": type(quiz['user_id']).__name__,
-                "title": quiz.get('title', 'Unknown'),
-                "questions_count": len(quiz.get('questions', []))
-            })
-        
-        # Check attempts
-        attempts = list(db.quiz_attempts.find({"user_id": user_id}).limit(5))
-        formatted_attempts = []
-        
-        for attempt in attempts:
-            formatted_attempts.append({
-                "id": str(attempt['_id']),
-                "quiz_id": attempt['quiz_id'],
-                "quiz_id_type": type(attempt['quiz_id']).__name__,
-                "user_id": attempt['user_id'],
-                "user_id_type": type(attempt['user_id']).__name__,
-                "score": attempt.get('score', 0),
-                "created_at": attempt.get('created_at', datetime.now()).isoformat()
-            })
-        
-        return jsonify({
-            "quizzes": formatted_quizzes,
-            "attempts": formatted_attempts,
-            "message": "This endpoint shows the first 5 quizzes and attempts for diagnostics"
-        }), 200
-        
-    except Exception as e:
-        print(f"Error in quiz_diagnostics: {str(e)}")
-        return jsonify({"error": f"Failed to retrieve diagnostics: {str(e)}"}), 500
+        # Format date
+        if 'created_at' in attempt:
+            attempt['created_at'] = attempt['created_at'].isoformat()
+    
+    return jsonify({
+        "attempts": attempts,
+        "pagination": {
+            "total": total_attempts,
+            "page": page,
+            "limit": limit,
+            "pages": (total_attempts + limit - 1) // limit
+        }
+    }), 200
