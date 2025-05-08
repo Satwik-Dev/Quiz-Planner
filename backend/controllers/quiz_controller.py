@@ -314,3 +314,43 @@ def get_user_attempts():
             del attempt['results']
     
     return jsonify(attempts), 200
+
+@quiz_bp.route('/history', methods=['GET'])
+@jwt_required()
+def get_quiz_history():
+    """Get quiz attempt history with quiz titles for the current user"""
+    user_id = get_jwt_identity()
+    
+    # Use aggregation to join quiz data with attempts
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$lookup": {
+            "from": "quizzes",
+            "localField": "quiz_id",
+            "foreignField": "_id",
+            "as": "quiz_info"
+        }},
+        {"$addFields": {
+            "quiz_title": {"$arrayElemAt": ["$quiz_info.title", 0]}
+        }},
+        {"$project": {
+            "_id": 1,
+            "quiz_id": 1,
+            "quiz_title": 1,
+            "score": 1,
+            "total_questions": 1,
+            "percentage": 1,
+            "created_at": 1
+        }},
+        {"$sort": {"created_at": -1}}
+    ]
+    
+    attempts = list(db.quiz_attempts.aggregate(pipeline))
+    
+    # Convert ObjectId to string for JSON serialization
+    for attempt in attempts:
+        attempt['_id'] = str(attempt['_id'])
+        attempt['quiz_id'] = str(attempt['quiz_id'])
+        attempt['created_at'] = attempt['created_at'].isoformat()
+    
+    return jsonify(attempts), 200
