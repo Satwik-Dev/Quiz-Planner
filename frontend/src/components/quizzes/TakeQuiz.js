@@ -19,16 +19,25 @@ const TakeQuiz = () => {
     const fetchQuiz = async () => {
       try {
         setLoading(true);
+        console.log('Fetching quiz with ID:', id); // Debug log
         const response = await api.get(`/quizzes/${id}`);
         setQuiz(response.data);
+        setError('');
       } catch (err) {
-        setError('Failed to fetch quiz');
+        console.error('Error fetching quiz:', err);
+        if (err.response?.status === 404) {
+          setError('Quiz not found. It may have been deleted or you do not have access to it.');
+        } else {
+          setError('Failed to fetch quiz. Please try again later.');
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchQuiz();
+    if (id) {
+      fetchQuiz();
+    }
   }, [id]);
 
   const handleAnswerChange = (answer) => {
@@ -61,6 +70,7 @@ const TakeQuiz = () => {
     }
 
     try {
+      console.log('Submitting answers for quiz:', id); // Debug log
       const response = await api.post(`/quizzes/${id}/attempt`, {
         answers
       });
@@ -68,7 +78,8 @@ const TakeQuiz = () => {
       setResults(response.data);
       setQuizSubmitted(true);
     } catch (err) {
-      setError('Failed to submit quiz');
+      console.error('Error submitting quiz:', err);
+      setError('Failed to submit quiz. Please try again later.');
     }
   };
 
@@ -76,8 +87,26 @@ const TakeQuiz = () => {
     return <div className="loading">Loading quiz...</div>;
   }
 
+  if (error) {
+    return (
+      <div className="error-state">
+        <div className="alert alert-danger">{error}</div>
+        <Link to="/quizzes" className="btn btn-primary">
+          Back to Quizzes
+        </Link>
+      </div>
+    );
+  }
+
   if (!quiz) {
-    return <div className="error-state">Quiz not found</div>;
+    return (
+      <div className="error-state">
+        <div className="alert alert-danger">Quiz not found</div>
+        <Link to="/quizzes" className="btn btn-primary">
+          Back to Quizzes
+        </Link>
+      </div>
+    );
   }
 
   // Render the question based on its type
@@ -155,9 +184,14 @@ const TakeQuiz = () => {
             <span className="score">Score: {results.score}/{results.total_questions}</span>
             <span className="percentage">({results.percentage.toFixed(1)}%)</span>
           </div>
-          <Link to="/quizzes" className="btn btn-outline-primary">
-            Back to Quizzes
-          </Link>
+          <div>
+            <Link to={`/quizzes/${id}`} className="btn btn-primary me-2">
+              Retake Quiz
+            </Link>
+            <Link to="/quizzes" className="btn btn-outline-primary">
+              Back to Quizzes
+            </Link>
+          </div>
         </div>
         
         <div className="results-details">

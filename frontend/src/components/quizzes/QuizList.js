@@ -28,7 +28,7 @@ const QuizList = () => {
     if (window.confirm('Are you sure you want to delete this quiz?')) {
       try {
         await api.delete(`/quizzes/${id}`);
-        setQuizzes(quizzes.filter(quiz => quiz._id !== id));
+        setQuizzes(quizzes.filter(quiz => quiz.id !== id));
       } catch (err) {
         setError('Failed to delete quiz');
       }
@@ -60,7 +60,7 @@ const QuizList = () => {
       ) : (
         <div className="quiz-list">
           {quizzes.map(quiz => (
-            <div key={quiz._id} className="quiz-card">
+            <div key={quiz.id} className="quiz-card">
               <h3>{quiz.title}</h3>
               <div className="date">
                 Created: {new Date(quiz.created_at).toLocaleDateString()}
@@ -70,15 +70,19 @@ const QuizList = () => {
               </p>
               
               <div className="stats">
-                <span>{quiz.question_count} questions</span>
+                <span>{quiz.num_questions} questions</span>
               </div>
               
               <div className="quiz-actions">
-                <Link to={`/quizzes/${quiz._id}`} className="btn btn-primary">
+                <Link 
+                  to={`/quizzes/${quiz.id}`} 
+                  className="btn btn-primary"
+                  onClick={() => console.log('Navigating to quiz with ID:', quiz.id)} // Debug log
+                >
                   Take Quiz
                 </Link>
                 <button 
-                  onClick={() => handleDelete(quiz._id)} 
+                  onClick={() => handleDelete(quiz.id)} 
                   className="btn btn-outline-danger"
                 >
                   Delete

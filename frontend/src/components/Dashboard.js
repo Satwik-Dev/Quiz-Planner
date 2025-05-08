@@ -9,10 +9,12 @@ const Dashboard = () => {
   const [stats, setStats] = useState({
     materialsCount: 0,
     quizzesCount: 0,
-    attemptsCount: 0
+    attemptsCount: 0,
+    averageScore: 0
   });
   const [recentMaterials, setRecentMaterials] = useState([]);
   const [recentQuizzes, setRecentQuizzes] = useState([]);
+  const [quizAttempts, setQuizAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -29,15 +31,18 @@ const Dashboard = () => {
         const quizzesResponse = await api.get('/quizzes');
         const quizzes = quizzesResponse.data;
         
-        // Fetch quiz attempts
-        const attemptsResponse = await api.get('/quizzes/attempts');
-        const attempts = attemptsResponse.data;
+        // Fetch quiz dashboard data (new endpoint)
+        const dashboardResponse = await api.get('/quizzes/dashboard');
+        const dashboardData = dashboardResponse.data;
         
-        // Set stats
+        console.log('Dashboard data:', dashboardData);
+        
+        // Set stats with the complete data
         setStats({
           materialsCount: materials.length,
           quizzesCount: quizzes.length,
-          attemptsCount: attempts.length
+          attemptsCount: dashboardData.stats.total_attempts,
+          averageScore: dashboardData.stats.average_score
         });
         
         // Set recent materials (last 3)
@@ -45,6 +50,9 @@ const Dashboard = () => {
         
         // Set recent quizzes (last 3)
         setRecentQuizzes(quizzes.slice(0, 3));
+        
+        // Store quiz attempts for display
+        setQuizAttempts(dashboardData.attempts.slice(0, 5)); // Store the 5 most recent attempts
         
       } catch (err) {
         setError('Failed to load dashboard data');
@@ -87,6 +95,11 @@ const Dashboard = () => {
           <div className="stat-number">{stats.attemptsCount}</div>
           <div className="stat-label">Quiz Attempts</div>
         </div>
+        
+        <div className="stat-card">
+          <div className="stat-number">{stats.averageScore}%</div>
+          <div className="stat-label">Average Score</div>
+        </div>
       </div>
       
       <div className="dashboard-sections">
@@ -127,10 +140,10 @@ const Dashboard = () => {
           {recentQuizzes.length > 0 ? (
             <div className="recent-items">
               {recentQuizzes.map(quiz => (
-                <div key={quiz._id} className="recent-item">
+                <div key={quiz.id} className="recent-item">
                   <h3>{quiz.title}</h3>
-                  <p>{quiz.question_count} questions</p>
-                  <Link to={`/quizzes/${quiz._id}`} className="btn btn-sm btn-outline-primary">
+                  <p>{quiz.num_questions} questions</p>
+                  <Link to={`/quizzes/${quiz.id}`} className="btn btn-sm btn-outline-primary">
                     Take Quiz
                   </Link>
                 </div>
@@ -149,6 +162,41 @@ const Dashboard = () => {
             </div>
           )}
         </div>
+      </div>
+      
+      {/* New section for quiz attempts */}
+      <div className="dashboard-section mt-4 w-100">
+        <div className="section-header">
+          <h2>Recent Quiz Attempts</h2>
+        </div>
+        
+        {quizAttempts && quizAttempts.length > 0 ? (
+          <div className="recent-items">
+            {quizAttempts.map(attempt => (
+              <div key={attempt._id} className="recent-item">
+                <h3>{attempt.quiz_title}</h3>
+                <div className="attempt-stats">
+                  <span className="score">Score: {attempt.score}/{attempt.total_questions} ({attempt.percentage.toFixed(1)}%)</span>
+                  <span className="date">Taken on: {new Date(attempt.created_at).toLocaleString()}</span>
+                </div>
+                <Link to={`/quizzes/${attempt.quiz_id}`} className="btn btn-sm btn-outline-primary mt-2">
+                  Retake Quiz
+                </Link>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <p>No quiz attempts yet</p>
+            {stats.quizzesCount > 0 ? (
+              <Link to="/quizzes" className="btn btn-primary">
+                Take a Quiz
+              </Link>
+            ) : (
+              <p>Generate quizzes first to take them</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

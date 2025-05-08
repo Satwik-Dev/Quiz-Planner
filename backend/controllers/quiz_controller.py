@@ -122,15 +122,35 @@ def get_quiz(quiz_id):
     """Get a specific quiz with all questions"""
     user_id = get_jwt_identity()
     
+    # Add extensive debugging
+    print(f"\n--- GET QUIZ REQUEST ---")
+    print(f"Quiz ID: {quiz_id}")
+    print(f"User ID: {user_id}")
+    
     if not ObjectId.is_valid(quiz_id):
+        print(f"Invalid quiz ID format: {quiz_id}")
         return jsonify({"error": "Invalid quiz ID"}), 400
     
+    # Convert user_id to string if it's an ObjectId
+    if isinstance(user_id, ObjectId):
+        user_id = str(user_id)
+    
+    # Try to find the quiz
     quiz = db.quizzes.find_one({
         "_id": ObjectId(quiz_id),
         "user_id": user_id
     })
     
     if not quiz:
+        print(f"Quiz not found for ID: {quiz_id}")
+        
+        # Check if quiz exists for any user to identify the issue
+        any_quiz = db.quizzes.find_one({"_id": ObjectId(quiz_id)})
+        if any_quiz:
+            print(f"Quiz exists but belongs to user: {any_quiz['user_id']}")
+        else:
+            print(f"Quiz doesn't exist in database at all")
+            
         return jsonify({"error": "Quiz not found"}), 404
     
     # Convert ObjectId to string and format dates
@@ -139,6 +159,7 @@ def get_quiz(quiz_id):
     quiz['created_at'] = quiz['created_at'].isoformat()
     quiz['updated_at'] = quiz['updated_at'].isoformat()
     
+    print(f"Quiz found and returned successfully")
     return jsonify(quiz), 200
 
 @quiz_bp.route('/<quiz_id>', methods=['DELETE'])
@@ -258,7 +279,7 @@ def submit_quiz_attempt(quiz_id):
         
         # Save attempt to database
         attempt = {
-            "quiz_id": quiz_id,
+            "quiz_id": quiz_id,  # Store as string
             "user_id": user_id,
             "answers": answers,
             "score": score,
@@ -269,6 +290,7 @@ def submit_quiz_attempt(quiz_id):
         }
         
         attempt_id = db.quiz_attempts.insert_one(attempt).inserted_id
+        print(f"Attempt saved with ID: {attempt_id}")
         
         # Add CORS headers to response
         response = jsonify({
@@ -315,42 +337,159 @@ def get_user_attempts():
     
     return jsonify(attempts), 200
 
-@quiz_bp.route('/history', methods=['GET'])
+@quiz_bp.route('/dashboard', methods=['GET'])
 @jwt_required()
-def get_quiz_history():
-    """Get quiz attempt history with quiz titles for the current user"""
+def get_quiz_dashboard():
+    """Get quiz dashboard data for the current user"""
     user_id = get_jwt_identity()
     
-    # Use aggregation to join quiz data with attempts
-    pipeline = [
-        {"$match": {"user_id": user_id}},
-        {"$lookup": {
-            "from": "quizzes",
-            "localField": "quiz_id",
-            "foreignField": "_id",
-            "as": "quiz_info"
-        }},
-        {"$addFields": {
-            "quiz_title": {"$arrayElemAt": ["$quiz_info.title", 0]}
-        }},
-        {"$project": {
-            "_id": 1,
-            "quiz_id": 1,
-            "quiz_title": 1,
-            "score": 1,
-            "total_questions": 1,
-            "percentage": 1,
-            "created_at": 1
-        }},
-        {"$sort": {"created_at": -1}}
-    ]
+    print(f"\n--- GET QUIZ DASHBOARD ---")
+    print(f"User ID: {user_id}")
     
-    attempts = list(db.quiz_attempts.aggregate(pipeline))
+    try:
+        # Get all attempts for the user
+        attempts = list(db.quiz_attempts.find({"user_id": user_id}).sort("created_at", -1))
+        
+        # Get all quizzes for the user
+        quizzes = list(db.quizzes.find({"user_id": user_id}))
+        
+        # Create a map of quiz_id to quiz data for easy lookup
+        quiz_map = {str(quiz['_id']): quiz for quiz in quizzes}
+        
+        # Format the data for the dashboard
+        dashboard_data = []
+        for attempt in attempts:
+            # Convert ObjectId to string
+            attempt['_id'] = str(attempt['_id'])
+            quiz_id = attempt['quiz_id']
+            
+            # Get quiz information
+            quiz = None
+            if ObjectId.is_valid(quiz_id):
+                quiz_object_id = ObjectId(quiz_id)
+                if str(quiz_object_id) in quiz_map:
+                    quiz = quiz_map[str(quiz_object_id)]
+            else:
+                # If quiz_id is already a string, look it up directly
+                if quiz_id in quiz_map:
+                    quiz = quiz_map[quiz_id]
+            
+            # Add quiz details to the attempt data
+            if quiz:
+                attempt['quiz_title'] = quiz.get('title', 'Unknown Quiz')
+                attempt['quiz_description'] = quiz.get('description', '')
+            else:
+                attempt['quiz_title'] = 'Quiz Not Found'
+                attempt['quiz_description'] = ''
+            
+            # Format date
+            if 'created_at' in attempt:
+                attempt['created_at'] = attempt['created_at'].isoformat()
+            
+            # Remove detailed results to make the response lighter
+            if 'results' in attempt:
+                del attempt['results']
+            
+            if 'answers' in attempt:
+                del attempt['answers']
+            
+            dashboard_data.append(attempt)
+        
+        # Get quiz performance stats
+        total_attempts = len(dashboard_data)
+        avg_score = sum([a.get('percentage', 0) for a in dashboard_data]) / total_attempts if total_attempts > 0 else 0
+        
+        response = {
+            "attempts": dashboard_data,
+            "stats": {
+                "total_attempts": total_attempts,
+                "average_score": round(avg_score, 2)
+            }
+        }
+        
+        return jsonify(response), 200
     
-    # Convert ObjectId to string for JSON serialization
-    for attempt in attempts:
-        attempt['_id'] = str(attempt['_id'])
-        attempt['quiz_id'] = str(attempt['quiz_id'])
-        attempt['created_at'] = attempt['created_at'].isoformat()
+    except Exception as e:
+        print(f"Error in get_quiz_dashboard: {str(e)}")
+        return jsonify({"error": f"Failed to retrieve dashboard data: {str(e)}"}), 500
+
+@quiz_bp.route('/attempts/<quiz_id>', methods=['GET'])
+@jwt_required()
+def get_quiz_attempts(quiz_id):
+    """Get all attempts for a specific quiz"""
+    user_id = get_jwt_identity()
     
-    return jsonify(attempts), 200
+    print(f"\n--- GET QUIZ ATTEMPTS ---")
+    print(f"Quiz ID: {quiz_id}")
+    print(f"User ID: {user_id}")
+    
+    try:
+        # Get all attempts for the quiz
+        attempts = list(db.quiz_attempts.find({
+            "quiz_id": quiz_id,
+            "user_id": user_id
+        }).sort("created_at", -1))  # Most recent first
+        
+        # Convert ObjectId to string for JSON serialization
+        for attempt in attempts:
+            attempt['_id'] = str(attempt['_id'])
+            attempt['quiz_id'] = str(attempt['quiz_id'])
+            
+            # Format date
+            if 'created_at' in attempt:
+                attempt['created_at'] = attempt['created_at'].isoformat()
+        
+        return jsonify(attempts), 200
+    
+    except Exception as e:
+        print(f"Error in get_quiz_attempts: {str(e)}")
+        return jsonify({"error": f"Failed to retrieve quiz attempts: {str(e)}"}), 500
+
+@quiz_bp.route('/diagnostics', methods=['GET'])
+@jwt_required()
+def quiz_diagnostics():
+    """Diagnostic endpoint to check quiz data structure"""
+    user_id = get_jwt_identity()
+    
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        # Check quizzes
+        quizzes = list(db.quizzes.find({"user_id": user_id}).limit(5))
+        formatted_quizzes = []
+        
+        for quiz in quizzes:
+            formatted_quizzes.append({
+                "id": str(quiz['_id']),
+                "id_type": type(quiz['_id']).__name__,
+                "user_id": quiz['user_id'],
+                "user_id_type": type(quiz['user_id']).__name__,
+                "title": quiz.get('title', 'Unknown'),
+                "questions_count": len(quiz.get('questions', []))
+            })
+        
+        # Check attempts
+        attempts = list(db.quiz_attempts.find({"user_id": user_id}).limit(5))
+        formatted_attempts = []
+        
+        for attempt in attempts:
+            formatted_attempts.append({
+                "id": str(attempt['_id']),
+                "quiz_id": attempt['quiz_id'],
+                "quiz_id_type": type(attempt['quiz_id']).__name__,
+                "user_id": attempt['user_id'],
+                "user_id_type": type(attempt['user_id']).__name__,
+                "score": attempt.get('score', 0),
+                "created_at": attempt.get('created_at', datetime.now()).isoformat()
+            })
+        
+        return jsonify({
+            "quizzes": formatted_quizzes,
+            "attempts": formatted_attempts,
+            "message": "This endpoint shows the first 5 quizzes and attempts for diagnostics"
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in quiz_diagnostics: {str(e)}")
+        return jsonify({"error": f"Failed to retrieve diagnostics: {str(e)}"}), 500
