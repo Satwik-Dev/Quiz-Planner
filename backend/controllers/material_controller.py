@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from bson.objectid import ObjectId
 import pymongo
@@ -11,42 +11,68 @@ material_bp = Blueprint('material', __name__)
 client = pymongo.MongoClient('mongodb://localhost:27017/')
 db = client.quiz_planner
 
+# Add this function to handle CORS preflight requests
+@material_bp.route('/', methods=['OPTIONS'])
+def materials_options():
+    response = make_response()
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+    return response
+
 @material_bp.route('/', methods=['POST'])
 @jwt_required()
 def create_material():
     """Create a new study material"""
-    user_id = get_jwt_identity()
-    data = request.get_json()
+    # Print debugging info
+    print("\n--- CREATE MATERIAL REQUEST ---")
+    print("Headers:", dict(request.headers))
+    print("Authorization:", request.headers.get('Authorization'))
     
-    # Validate input
-    if not data or 'title' not in data or 'content' not in data:
-        return jsonify({"error": "Title and content are required"}), 400
-    
-    title = data['title'].strip()
-    content = data['content']
-    
-    if not title or not content:
-        return jsonify({"error": "Title and content cannot be empty"}), 400
-    
-    # Create new material
-    material = {
-        "title": title,
-        "content": content,
-        "description": data.get('description', '').strip(),
-        "tags": data.get('tags', []),
-        "user_id": user_id,
-        "created_at": datetime.now()
-    }
-    
-    material_id = db.study_materials.insert_one(material).inserted_id
-    
-    return jsonify({
-        "message": "Study material created successfully",
-        "material": {
-            "id": str(material_id),
-            "title": title
+    try:
+        user_id = get_jwt_identity()
+        print("User ID from JWT:", user_id)
+        
+        data = request.get_json()
+        print("Request data:", data)
+        
+        # Validate input
+        if not data or 'title' not in data or 'content' not in data:
+            return jsonify({"error": "Title and content are required"}), 400
+        
+        title = data['title'].strip()
+        content = data['content']
+        
+        if not title or not content:
+            return jsonify({"error": "Title and content cannot be empty"}), 400
+        
+        # Create new material
+        material = {
+            "title": title,
+            "content": content,
+            "description": data.get('description', '').strip(),
+            "tags": data.get('tags', []),
+            "user_id": user_id,
+            "created_at": datetime.now()
         }
-    }), 201
+        
+        material_id = db.study_materials.insert_one(material).inserted_id
+        print("Material created with ID:", material_id)
+        
+        # Add CORS headers to response
+        response = jsonify({
+            "message": "Study material created successfully",
+            "material": {
+                "id": str(material_id),
+                "title": title
+            }
+        })
+        
+        return response, 201
+        
+    except Exception as e:
+        print("Error in create_material:", str(e))
+        return jsonify({"error": f"Failed to create material: {str(e)}"}), 500
 
 @material_bp.route('/', methods=['GET'])
 @jwt_required()

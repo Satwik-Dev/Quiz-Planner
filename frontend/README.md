@@ -1,86 +1,70 @@
-# Quiz Planner - Frontend
+# Getting Started with Create React App
 
-This is the frontend for the Quiz Planner application, a tool that helps users create and manage study materials and generate quizzes using AI.
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-## Features
+## Available Scripts
 
-- User authentication and profile management
-- Create, view, edit, and delete study materials
-- AI-powered quiz generation from study materials
-- Multiple question types (multiple choice, true/false, short answer)
-- Interactive quiz taking experience
-- Dashboard with statistics and recent activities
+In the project directory, you can run:
 
-## Technology Stack
+### `npm start`
 
-- React (Create React App)
-- React Router for navigation
-- Axios for API calls
-- Tailwind CSS for styling
-- Recharts for data visualization
-- Headless UI for accessible components
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
-## Project Structure
+The page will reload when you make changes.\
+You may also see any lint errors in the console.
 
-The project follows a feature-based structure with the following main directories:
+### `npm test`
 
-- `src/components`: UI components organized by feature
-- `src/contexts`: React context providers for state management
-- `src/services`: API service modules for backend communication
-- `src/hooks`: Custom React hooks
-- `src/utils`: Utility functions
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
 
-## Getting Started
+### `npm run build`
 
-### Prerequisites
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
 
-- Node.js (v14 or higher)
-- npm or yarn
-- Backend server running (see backend repository)
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
 
-### Installation
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/quiz-planner-frontend.git
-cd quiz-planner-frontend
-```
+### `npm run eject`
 
-2. Install dependencies
-```bash
-npm install
-# or
-yarn install
-```
+**Note: this is a one-way operation. Once you `eject`, you can't go back!**
 
-3. Create a `.env` file in the root directory with the following content:
-```
-REACT_APP_API_URL=http://localhost:5000/api
-```
+If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
 
-4. Start the development server
-```bash
-npm start
-# or
-yarn start
-```
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
 
-The application will be available at http://localhost:3000.
+You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
 
-## Connecting to the Backend
+## Learn More
 
-Make sure the backend server is running at http://localhost:5000 or update the `REACT_APP_API_URL` in your `.env` file accordingly.
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
 
-## Build for Production
+To learn React, check out the [React documentation](https://reactjs.org/).
 
-```bash
-npm run build
-# or
-yarn build
-```
+### Code Splitting
 
-This will create a production-ready build in the `build` directory.
+This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
 
-## License
+### Analyzing the Bundle Size
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+
+### Making a Progressive Web App
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+
+### Advanced Configuration
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+
+### Deployment
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+
+### `npm run build` fails to minify
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)

@@ -1,13 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  DocumentPlusIcon, 
-  PencilIcon, 
-  TrashIcon,
-  AcademicCapIcon,
-  TagIcon
-} from '@heroicons/react/24/outline';
-import materialService from '../../services/materialService';
+import api from '../../services/api';
+import './Materials.css';
 
 const MaterialDetail = () => {
   const { id } = useParams();
@@ -16,17 +10,32 @@ const MaterialDetail = () => {
   const [material, setMaterial] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    content: '',
+    description: '',
+    tags: ''
+  });
 
   useEffect(() => {
     const fetchMaterial = async () => {
       try {
         setLoading(true);
-        const data = await materialService.getMaterialById(id);
-        setMaterial(data);
-      } catch (error) {
-        console.error('Error fetching material:', error);
-        setError('Failed to load the study material. Please try again.');
+        const response = await api.get(`/materials/${id}`);
+        const materialData = response.data;
+        setMaterial(materialData);
+        
+        // Initialize form data
+        setFormData({
+          title: materialData.title,
+          content: materialData.content,
+          description: materialData.description || '',
+          tags: materialData.tags ? materialData.tags.join(', ') : ''
+        });
+        
+      } catch (err) {
+        setError('Failed to fetch study material');
       } finally {
         setLoading(false);
       }
@@ -35,176 +44,193 @@ const MaterialDetail = () => {
     fetchMaterial();
   }, [id]);
 
-  const handleDelete = async () => {
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
     try {
-      await materialService.deleteMaterial(id);
-      navigate('/materials');
-    } catch (error) {
-      console.error('Error deleting material:', error);
-      setError('Failed to delete the material. Please try again.');
+      const updatedMaterial = {
+        title: formData.title,
+        content: formData.content,
+        description: formData.description,
+        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
+      };
+      
+      await api.put(`/materials/${id}`, updatedMaterial);
+      
+      // Update local state
+      setMaterial({
+        ...material,
+        ...updatedMaterial
+      });
+      
+      setEditing(false);
+    } catch (err) {
+      setError('Failed to update study material');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this study material?')) {
+      try {
+        await api.delete(`/materials/${id}`);
+        navigate('/materials');
+      } catch (err) {
+        setError('Failed to delete study material');
+      }
     }
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 p-4 rounded-md">
-        <div className="flex">
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-red-800">{error}</h3>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="loading">Loading study material...</div>;
   }
 
   if (!material) {
-    return (
-      <div className="bg-yellow-50 p-4 rounded-md">
-        <div className="flex">
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-yellow-800">Study material not found</h3>
-            <div className="mt-2 text-sm text-yellow-700">
-              <p>The requested study material could not be found.</p>
-            </div>
-            <div className="mt-4">
-              <button
-                type="button"
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                onClick={() => navigate('/materials')}
-              >
-                Back to Materials
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="error-state">Study material not found</div>;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="md:flex md:items-center md:justify-between">
-        <div className="flex-1 min-w-0">
-          <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
-            {material.title}
-          </h2>
-          {material.description && (
-            <p className="mt-1 text-sm text-gray-500">
-              {material.description}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {material.tags && material.tags.map((tag, index) => (
-              <span
-                key={index}
-                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+    <div className="material-detail-container">
+      {error && <div className="alert alert-danger">{error}</div>}
+      
+      {editing ? (
+        <div className="edit-material-form">
+          <h2>Edit Study Material</h2>
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="title">Title</label>
+              <input
+                type="text"
+                id="title"
+                name="title"
+                className="form-control"
+                value={formData.title}
+                onChange={handleChange}
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="description">Description</label>
+              <input
+                type="text"
+                id="description"
+                name="description"
+                className="form-control"
+                value={formData.description}
+                onChange={handleChange}
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="content">Content</label>
+              <textarea
+                id="content"
+                name="content"
+                className="form-control"
+                rows="12"
+                value={formData.content}
+                onChange={handleChange}
+                required
+              ></textarea>
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="tags">Tags (comma separated)</label>
+              <input
+                type="text"
+                id="tags"
+                name="tags"
+                className="form-control"
+                value={formData.tags}
+                onChange={handleChange}
+              />
+            </div>
+            
+            <div className="form-actions">
+              <button 
+                type="button" 
+                className="btn btn-secondary"
+                onClick={() => setEditing(false)}
               >
-                <TagIcon className="mr-1 h-3 w-3" />
-                {tag}
-              </span>
-            ))}
-          </div>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Save Changes
+              </button>
+            </div>
+          </form>
         </div>
-        <div className="mt-5 flex xl:mt-0">
-          <span className="hidden sm:block ml-3">
-            <Link
-              to={`/materials/edit/${id}`}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <PencilIcon className="-ml-1 mr-2 h-5 w-5 text-gray-500" aria-hidden="true" />
-              Edit
+      ) : (
+        <div className="material-detail">
+          <div className="material-header">
+            <h1>{material.title}</h1>
+            <div className="header-actions">
+              <button 
+                onClick={() => setEditing(true)} 
+                className="btn btn-outline-primary me-2"
+              >
+                Edit
+              </button>
+              <button 
+                onClick={handleDelete} 
+                className="btn btn-outline-danger"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+          
+          <div className="material-meta">
+            <div className="date">
+              Created: {new Date(material.created_at).toLocaleDateString()}
+            </div>
+            
+            {material.description && (
+              <div className="description">
+                <h3>Description</h3>
+                <p>{material.description}</p>
+              </div>
+            )}
+            
+            {material.tags && material.tags.length > 0 && (
+              <div className="tags-container">
+                <h3>Tags</h3>
+                <div className="tags">
+                  {material.tags.map((tag, index) => (
+                    <span key={index} className="tag">{tag}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="material-content">
+            <h3>Content</h3>
+            <div className="content-box">
+              {material.content.split('\n').map((line, index) => (
+                <p key={index}>{line}</p>
+              ))}
+            </div>
+          </div>
+          
+          <div className="material-actions-bar">
+            <Link to="/materials" className="btn btn-secondary">
+              Back to Materials
             </Link>
-          </span>
-
-          <span className="hidden sm:block ml-3">
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            <Link 
+              to={`/quizzes/generate?material=${material._id}`}
+              className="btn btn-primary"
             >
-              <TrashIcon className="-ml-1 mr-2 h-5 w-5 text-gray-500" aria-hidden="true" />
-              Delete
-            </button>
-          </span>
-
-          <span className="sm:ml-3">
-            <Link
-              to={`/quizzes/new?materialId=${id}`}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              <AcademicCapIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
               Generate Quiz
             </Link>
-          </span>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <div className="prose max-w-none">
-            <pre className="whitespace-pre-wrap p-4 bg-gray-50 rounded-md border border-gray-200">
-              {material.content}
-            </pre>
-          </div>
-        </div>
-      </div>
-
-      {/* Created date */}
-      <div className="mt-2 flex justify-end">
-        <p className="text-sm text-gray-500">
-          Created: {new Date(material.created_at).toLocaleDateString()}
-        </p>
-      </div>
-
-      {/* Delete confirmation dialog */}
-      {showDeleteConfirm && (
-        <div className="fixed z-10 inset-0 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <div className="sm:flex sm:items-start">
-                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <TrashIcon className="h-6 w-6 text-red-600" aria-hidden="true" />
-                </div>
-                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
-                    Delete study material
-                  </h3>
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-500">
-                      Are you sure you want to delete this study material? All of your data will be permanently
-                      removed. This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
-                  onClick={handleDelete}
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-                  onClick={() => setShowDeleteConfirm(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
