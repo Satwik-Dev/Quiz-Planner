@@ -1,3 +1,4 @@
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -16,7 +17,7 @@ app.url_map.strict_slashes = False
 
 # Update CORS configuration with specific options
 CORS(app, 
-     resources={r"/api/*": {"origins": "http://localhost:3000"}},
+     resources={r"/api/*": {"origins": Config.CORS_ALLOWED_ORIGINS.split(',')}},
      supports_credentials=True,
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
@@ -42,14 +43,16 @@ app.register_blueprint(quiz_bp, url_prefix='/api/quizzes')
 @app.route('/api/materials', methods=['OPTIONS'])
 def handle_materials_options():
     response = jsonify({'status': 'ok'})
-    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Origin', Config.CORS_ALLOWED_ORIGINS)
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
     return response
 
 @app.route('/api/health')
 def health_check():
-    return jsonify({"status": "healthy"})
+    return jsonify({"status": "healthy", "environment": os.environ.get('ENVIRONMENT', 'development')})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    host = '0.0.0.0'  # Bind to all interfaces
+    app.run(host=host, port=port, debug=Config.DEBUG)
